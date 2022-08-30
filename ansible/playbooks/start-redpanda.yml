@@ -29,7 +29,8 @@
         port: 33145
       }' --format yaml
       sudo rpk mode production
-
+      sudo rpk redpanda config set rpk.tune_clocksource false
+      
       sudo rpk config set redpanda.rpc_server_tcp_recv_buf 65536
 
       {% if hostvars[groups['redpanda'][0]].id == hostvars[inventory_hostname].id %}
