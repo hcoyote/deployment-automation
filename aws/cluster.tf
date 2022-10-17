@@ -20,7 +20,12 @@ resource "aws_instance" "redpanda" {
   instance_type          = var.instance_type
   key_name               = aws_key_pair.ssh.key_name
   vpc_security_group_ids = [aws_security_group.node_sec_group.id]
-  tags                   = local.instance_tags
+  tags                   = merge(
+    local.instance_tags,
+    {
+      Name = "${var.instance_name_prefix}-redpanda-${count.index}",
+    }
+  )
 
   connection {
     user        = var.distro_ssh_user[var.distro]
