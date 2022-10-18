@@ -6,6 +6,7 @@ locals {
   uuid = random_uuid.cluster.result
   timestamp = time_static.timestamp.rfc3339
   deployment_id = "redpanda-${local.uuid}-${local.timestamp}"
+  si_bucket_name = "${var.instance_name_prefix}-redpanda-si-bucket"
 
   # tags shared by all instances
   instance_tags = {
@@ -14,10 +15,59 @@ locals {
   }
 }
 
+resource "aws_iam_policy" "redpanda" {
+  name   = "${var.instance_name_prefix}-redpanda"
+  path   = "/"
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:GetObject",
+          "s3:PutObject",
+        ],
+        "Resource": [
+          "arn:aws:s3:::${local.si_bucket_name}/*"
+        ]
+      },
+    ]
+  })
+}
+
+resource "aws_iam_role" "redpanda" {
+  name               = "${var.instance_name_prefix}-redpanda"
+  assume_role_policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Sid       = ""
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      },
+    ]
+  })
+}
+
+resource "aws_iam_policy_attachment" "redpanda" {
+  name       = "${var.instance_name_prefix}-redpanda"
+  roles      = [aws_iam_role.redpanda.name]
+  policy_arn = aws_iam_policy.redpanda.arn
+}
+
+resource "aws_iam_instance_profile" "redpanda" {
+  name = "${var.instance_name_prefix}-redpanda"
+  role = aws_iam_role.redpanda.name
+}
+
 resource "aws_instance" "redpanda" {
   count                  = var.nodes
   ami                    = var.distro_ami[var.distro]
   instance_type          = var.instance_type
+  iam_instance_profile   = aws_iam_instance_profile.redpanda.name
   key_name               = aws_key_pair.ssh.key_name
   vpc_security_group_ids = [aws_security_group.node_sec_group.id]
   tags                   = merge(
@@ -98,7 +148,7 @@ resource "aws_security_group" "node_sec_group" {
     from_port   = 9644
     to_port     = 9644
     protocol    = "tcp"
-    self        = true
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # grafana
@@ -137,6 +187,7 @@ resource "aws_security_group" "node_sec_group" {
 resource "aws_key_pair" "ssh" {
   key_name   = "${local.deployment_id}-key"
   public_key = file(var.public_key_path)
+  tags       = local.instance_tags
 }
 
 resource "local_file" "hosts_ini" {
